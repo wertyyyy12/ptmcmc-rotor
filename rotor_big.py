@@ -45,7 +45,7 @@ rng = np.random.default_rng(SEED)
 true_parameters = tf.cast(tf.linspace(1, 10, NUM_PARAMETERS), dtype)[tf.newaxis, ...] # shape = (1, NUM_PARAMETERS)
 num_temperatures = 7
 inverse_temperatures = 0.6**tf.range(num_temperatures, dtype=dtype)
-num_posterior_samples = 5000000
+num_posterior_samples = 500000
 num_burn_in_steps = 500
 parameter_labels = [chr(x) for x in range(ord('A'), ord('A') + NUM_PARAMETERS)]
 step_size = tf.reshape(tf.repeat(tf.constant(.1, dtype=dtype), num_temperatures * NUM_PARAMETERS), (num_temperatures, NUM_PARAMETERS))

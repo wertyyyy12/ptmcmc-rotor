@@ -8,17 +8,52 @@ Original file is located at
 """
 
 # Commented out IPython magic to ensure Python compatibility.
-# from pprint import pprint
+from pprint import pprint
 import matplotlib.pyplot as plt
 import numpy as np
+import threading
+import time
 # import seaborn as sns
+
+import logging
+import sys
+
+def setup_custom_logger(name):
+    formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
+                                  datefmt='%Y-%m-%d %H:%M:%S')
+    handler = logging.FileHandler('log.txt', mode='w')
+    handler.setFormatter(formatter)
+    screen_handler = logging.StreamHandler(stream=sys.stdout)
+    screen_handler.setFormatter(formatter)
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
+    logger.addHandler(screen_handler)
+    return logger
+
+logger = setup_custom_logger('myapp')
+def call_method_periodically(interval, stop_event):
+    while not stop_event.is_set():
+        logger.info('Time logging message')
+        time.sleep(interval)
+
+# Create a stop event to allow for graceful stopping of the thread
+stop_event = threading.Event()
+thread = threading.Thread(target=call_method_periodically, args=(1, stop_event))
+thread.start()
+
+# !pip install -U corner
 import corner
+# !pip install -U emcee
+# import emcee
 import tensorflow as tf
-# import tensorflow.compat.v2 as tf
-# tf.enable_v2_behavior()
+import tensorflow.compat.v2 as tf
+tf.enable_v2_behavior()
 
 import tensorflow_probability as tfp
 
+# sns.reset_defaults()
+# sns.set_context(context='talk',font_scale=0.7)
 plt.rcParams['image.cmap'] = 'viridis'
 
 # %matplotlib inline
@@ -38,15 +73,15 @@ def tfc(arr):
 SEED = 42229
 OUTPUT_DIM = 4
 NUM_PARAMETERS = 23
-MEASUREMENT_ERROR = tfc([4., 6., 8., 9.]) # shape = (OUTPUT_DIM,)
+MEASUREMENT_ERROR = tfc([4., 7., 3., 9.]) # shape = (OUTPUT_DIM,)
 THETA_VALUES = tfc([1., 2., 3.]) # shape = (number_of_theta_values,)
 rng = np.random.default_rng(SEED)
 
 true_parameters = tf.cast(tf.linspace(1, 10, NUM_PARAMETERS), dtype)[tf.newaxis, ...] # shape = (1, NUM_PARAMETERS)
 num_temperatures = 7
 inverse_temperatures = 0.6**tf.range(num_temperatures, dtype=dtype)
-num_posterior_samples = 5000000
-num_burn_in_steps = 500
+num_posterior_samples = 5000
+num_burn_in_steps = 5000
 parameter_labels = [chr(x) for x in range(ord('A'), ord('A') + NUM_PARAMETERS)]
 step_size = tf.reshape(tf.repeat(tf.constant(.1, dtype=dtype), num_temperatures * NUM_PARAMETERS), (num_temperatures, NUM_PARAMETERS))
 initial_state = tf.zeros(NUM_PARAMETERS, dtype=dtype)
@@ -92,54 +127,12 @@ def unnormalized_posterior(parameters):
 # print(tf.concat((true_parameters, true_parameters + 1.), axis=0))
 print(unnormalized_posterior(tf.concat((true_parameters, true_parameters + 1., true_parameters + 2., true_parameters + 3.), axis=0)))
 
-# ================================ KERNEL ==============================
-# def make_kernel_fn(target_log_prob_fn):
-#   return tfp.mcmc.HamiltonianMonteCarlo(
-#     target_log_prob_fn=target_log_prob_fn,
-#     step_size=step_size,
-#     num_leapfrog_steps=2)
-
 def make_kernel_fn(target_log_prob_fn):
-  kernel = tfp.mcmc.HamiltonianMonteCarlo(
+  return tfp.mcmc.HamiltonianMonteCarlo(
     target_log_prob_fn=target_log_prob_fn,
     step_size=step_size,
     num_leapfrog_steps=2)
-  return tfp.mcmc.SimpleStepSizeAdaptation(
-        kernel,
-        num_adaptation_steps=int(.8 * num_posterior_samples),
-        target_accept_prob=np.float64(.3))
 
-# def make_kernel_fn(target_log_prob_fn):
-#   return tfp.mcmc.RandomWalkMetropolis(target_log_prob_fn=target_log_prob_fn)
-
-# def make_kernel_fn(target_log_prob_fn):
-#   return tfp.mcmc.MetropolisAdjustedLangevinAlgorithm(
-#       target_log_prob_fn=target_log_prob_fn,
-#       step_size=step_size)
-
-# def make_kernel_fn(target_log_prob_fn):
-#   bijectors = [tfp.bijectors.Log()]
-#   hmc = tfp.mcmc.TransformedTransitionKernel(
-#     tfp.mcmc.RandomWalkMetropolis(target_log_prob_fn=target_log_prob_fn),
-#     bijectors
-#   )
-#   return hmc
-
-# def make_kernel_fn(target_log_prob_fn):
-#   bijectors = [tfp.bijectors.Log()]
-#   kernel = tfp.mcmc.TransformedTransitionKernel(
-#     tfp.mcmc.SimpleStepSizeAdaptation(
-#         tfp.mcmc.HamiltonianMonteCarlo(
-#         target_log_prob_fn=target_log_prob_fn,
-#         step_size=step_size,
-#         num_leapfrog_steps=2),
-#       num_adaptation_steps=int(.8 * num_posterior_samples),
-#       target_accept_prob=np.float64(.3)),
-#     bijectors
-#   )
-#   return kernel
-
-# ========= END KERNEL ==================================================
 @tf.function
 def run_chain(kernel, initial_state, num_posterior_samples=num_posterior_samples, num_burnin_steps=num_burn_in_steps):
   return tfp.mcmc.sample_chain(
@@ -154,13 +147,23 @@ remc = tfp.mcmc.ReplicaExchangeMC(
     inverse_temperatures=inverse_temperatures,
     make_kernel_fn=make_kernel_fn)
 
-print("RUNNING CHAIN...")
 samples, kernel_results = run_chain(remc, initial_state)
-print("chain complete.")
 
-print("PLOTTING SAMPLES")
-fig = corner.corner(samples.numpy(),show_titles=True,labels=parameter_labels,plot_datapoints=True,quantiles=[0.16, 0.5, 0.84], truths=true_parameters.numpy()[0])
-# Save the figure
-fig.savefig("your_plot_filename.png", dpi=300, bbox_inches="tight")
-print("plotted and saved to file")
+# if u wish to write all these tensors on each line ,
+# then create a single string out of these.
+one_string = tf.strings.format("{}\n{}\n{}\n", (a,b,c))
 
+
+try:
+    fig = corner.corner(samples.numpy(),show_titles=True,labels=parameter_labels,plot_datapoints=True,quantiles=[0.16, 0.5, 0.84], truths=true_parameters.numpy()[0])
+    print(samples.numpy().shape)
+    # Save the figure
+    fig.savefig("your_plot_filename.png", dpi=300, bbox_inches="tight")
+except Exception as e:
+    print("an error occurred when plotting:")
+    print(e) 
+
+
+print(true_parameters.numpy().shape)
+stop_event.set()
+thread.join()
