@@ -12,9 +12,9 @@ from pprint import pprint
 import matplotlib.pyplot as plt
 import numpy as np
 import threading
+import pickle
 import time
 # import seaborn as sns
-
 import logging
 import sys
 
@@ -149,10 +149,21 @@ remc = tfp.mcmc.ReplicaExchangeMC(
 
 samples, kernel_results = run_chain(remc, initial_state)
 
+print(samples.shape)
+print(kernel_results)
 # if u wish to write all these tensors on each line ,
 # then create a single string out of these.
-one_string = tf.strings.format("{}\n{}\n{}\n", (a,b,c))
+one_string = tf.strings.format("{}", (samples))
 
+# {} is a placeholder for each element ina string and thus you would need n PH for n tensors.
+# send this string to write_file fn
+tf.io.write_file("mcmc_progress", one_string)
+print("wrote tensor to file")
+
+with open("mcmc_kernel_results", "wb") as f:
+	pickle.dump(kernel_results, f)
+
+print("wrote kernel results to file")
 
 try:
     fig = corner.corner(samples.numpy(),show_titles=True,labels=parameter_labels,plot_datapoints=True,quantiles=[0.16, 0.5, 0.84], truths=true_parameters.numpy()[0])
