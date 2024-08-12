@@ -14,6 +14,7 @@ import corner
 # import emcee
 import tensorflow as tf
 import tensorflow.compat.v2 as tf
+from time_logger import start_logger
 tf.enable_v2_behavior()
 
 import tensorflow_probability as tfp
@@ -27,6 +28,7 @@ plt.rcParams['image.cmap'] = 'viridis'
 tfd = tfp.distributions
 tfb = tfp.bijectors
 from tensorflow_probability.python.mcmc import kernel as kernel_base
+
 # from tf.math import polyval
 
 def npf(array_):
@@ -37,22 +39,27 @@ def tfc(arr):
   return tf.constant(arr, dtype=dtype)
 
 
+stop_logger = start_logger("alive", interval=30)
 SEED = 42229
-OUTPUT_DIM = 1
-NUM_PARAMETERS = 5
-MEASUREMENT_ERROR = tfc([4.,]) # shape = (OUTPUT_DIM,)
+OUTPUT_DIM = 4
+NUM_PARAMETERS = 23
+MEASUREMENT_ERROR = tfc([4., 5., 3., 2.]) # shape = (OUTPUT_DIM,)
 THETA_VALUES = tfc([1., 2., 3.]) # shape = (number_of_theta_values,)
 rng = np.random.default_rng(SEED)
+eager = False # whether to run the tensors in eager mode or not. only for debugging.
+if eager: 
+  tf.config.run_functions_eagerly(True) 
+  print("EAGER mode turned on")
 
 true_parameters = tf.cast(tf.linspace(1, 10, NUM_PARAMETERS), dtype)[tf.newaxis, ...] # shape = (1, NUM_PARAMETERS)
 print("true_parameters = ", true_parameters)
-run_identifier = "SPLIT"
+num_posterior_samples = int(5e3)
+run_identifier = f"5e3"
 num_temperatures = 7
-inverse_temperatures = 0.6**tf.range(num_temperatures, dtype=dtype)
-num_posterior_samples = 30000
-num_burn_in_steps = 100
+inverse_temperatures = 0.3**tf.range(num_temperatures, dtype=dtype)
+num_burn_in_steps = 1
 parameter_labels = [chr(x) for x in range(ord('A'), ord('A') + NUM_PARAMETERS)]
-step_size = tf.reshape(tf.repeat(tf.constant(.1, dtype=dtype), num_temperatures * NUM_PARAMETERS), (num_temperatures, NUM_PARAMETERS))
+step_size = tf.reshape(tf.repeat(tf.constant(.7, dtype=dtype), num_temperatures * NUM_PARAMETERS), (num_temperatures, NUM_PARAMETERS))
 initial_state = tf.zeros(NUM_PARAMETERS, dtype=dtype)
 # initial_state = tf.constant([10000, -10000], dtype=dtype)
 
@@ -63,39 +70,51 @@ initial_state = tf.zeros(NUM_PARAMETERS, dtype=dtype)
 @tf.function
 def model(theta, parameters):
   powers = tf.pow(theta[..., tf.newaxis], tf.reshape(tf.range(NUM_PARAMETERS, dtype=dtype), (1, -1)))[:, tf.newaxis, ...]
-  print(powers.shape)
   intermediate_parameters = tf.cast(tf.transpose(parameters)[tf.newaxis, ...], dtype=dtype)
-  print(intermediate_parameters.shape)
   result = tf.linalg.matmul(powers, intermediate_parameters)[:, 0, ...]
 
-  # return tf.cast(tf.stack((result, result * 2., result * 3., result * 4.), axis=-1), dtype=dtype)
+  return tf.cast(tf.stack((result, result * 2., result * 3., result * 4.), axis=-1), dtype=dtype)
   # return tf.cast(tf.stack((result, result * 2.), axis=-1), dtype=dtype)
-  return result[..., tf.newaxis]
+#  return result[..., tf.newaxis]
 
 thetas = THETA_VALUES
 ys = model(thetas, true_parameters)
 
 @tf.function
 def lnprior(parameters):
-  return tfc(0.0)
+#  print("parameters.shape", parameters.shape) 
+#  print(parameters)
+  # Check if all elements are greater than 0
+  all_greater_than_zero = tf.reduce_all(parameters > -10, axis=1)
+
+  # Check if all elements are less than 10
+  all_less_than_ten = tf.reduce_all(parameters < 20, axis=1)
+
+  # Check if all conditions are met
+  not_valid_parameters = tf.cast(tf.logical_not(tf.logical_and(all_greater_than_zero, all_less_than_ten)), dtype)
+
+  neg_inf = tf.constant([-tf.float32.max])
+  # Return 0.0 if valid, -infinity otherwise
+#  print("valid_parameters.shape", valid_parameters.shape)
+#  print(valid_parameters)
+#  print("neg_inf.shape", neg_inf.shape)
+#  print(neg_inf)
+#  print("final result shape", tf.multiply(valid_parameters, neg_inf).shape)
+#  print(tf.multiply(valid_parameters, neg_inf))
+
+  return tf.multiply(not_valid_parameters, neg_inf)
+
+"""
+@tf.function
+def lnprior(parameters):
+  return tf.constant(0.0, dtype=dtype)
+"""
 
 @tf.function
 def unnormalized_posterior(parameters):
-  # print("predicted values shape", model(thetas, parameters).shape)
-  print("model(thetas, parameters).shape", model(thetas, parameters).shape)
-  print("parameters.shape", parameters.shape)
-  print("MEASUREMENT_ERROR.shape", MEASUREMENT_ERROR.shape)
-  # print(model(thetas, parameters)[1, 0, 0])
-  # print(model(thetas, parameters)[:, 1, 0])
-  # print(model(thetas, parameters)[:, 0, 1])
   likelihoods = tfd.MultivariateNormalDiag(loc=model(thetas, parameters), scale_diag=MEASUREMENT_ERROR)
-  print("likelihoods log prob shape", likelihoods.log_prob(ys).shape)
-  # print("reduced sum, with specified axis shape", tf.reduce_sum(likelihoods.log_prob(ys), axis=0).shape)
   return (lnprior(parameters) +
           tf.reduce_sum(likelihoods.log_prob(ys), axis=0)) # axis=0 is IMPORTANT! sum over theta, not over the parameter choices.
-
-# print(tf.concat((true_parameters, true_parameters + 1.), axis=0))
-print(unnormalized_posterior(tf.concat((true_parameters, true_parameters + 1., true_parameters + 2., true_parameters + 3.), axis=0)))
 
 # ================ KERNEL CHOICE ================
 # def make_kernel_fn(target_log_prob_fn):
@@ -111,9 +130,14 @@ def make_kernel_fn(target_log_prob_fn):
     num_leapfrog_steps=2)
   return tfp.mcmc.SimpleStepSizeAdaptation(
         kernel,
-        num_adaptation_steps=int(.8 * num_burn_in_steps),
-        target_accept_prob=np.float64(.3))
+        num_adaptation_steps=int(.8 * num_posterior_samples),
+        target_accept_prob=np.float64(.6))
 
+# def make_kernel_fn(target_log_prob_fn):
+#   kernel = tfp.mcmc.NoUTurnSampler(
+#     target_log_prob_fn,
+#     step_size,
+# )
 
 # ============ end kernel choice ===================
 
@@ -124,18 +148,19 @@ def run_chain(kernel, initial_state, num_posterior_samples=num_posterior_samples
     num_burnin_steps=num_burnin_steps,
     current_state=initial_state,
     kernel=kernel,
-#    trace_fn=lambda current_state, kernel_results: kernel_results
-    trace_fn=partial(trace_fn, summary_freq=5)
+    trace_fn=lambda current_state, kernel_results: kernel_results
 )
 
 @tf.function
 def run_chain_block(kernel, initial_state, num_posterior_samples=num_posterior_samples, num_burnin_steps=num_burn_in_steps):
-  print(kernel)
+  # print(kernel)
   current_state = initial_state
   kernel_results = kernel.bootstrap_results(current_state)
   chain_blocks = []
   trace_blocks = []
   # current_state = initial_state
+
+  
   num_blocks = 3
   for i in range(num_blocks):
     print(f"running block {i}")
@@ -148,69 +173,75 @@ def run_chain_block(kernel, initial_state, num_posterior_samples=num_posterior_s
       previous_kernel_results=kernel_results,
       return_final_kernel_results=True,
     )
-    print("chain ended at ", chain[-1, :])
-    print(tf.nest.map_structure(lambda x: x[-1], chain)[0])
+    # print("chain ended at ", chain[-1, :])
+    # print("full chain was ", chain)
+    # print(tf.nest.map_structure(lambda x: x[-1], chain)[0])
     current_state = chain[-1, :]
     chain_blocks.append(chain)
     trace_blocks.append(trace)
+ 
 
-    with open("mcmc_inter_kernel", "wb") as f:
-      pickle.dump(kernel_results, f)
-    one_string = tf.strings.format("{}", (chain))
-    print("writing file")
-    tf.io.write_file("mcmc_intermediate_results", one_string)  
-    print("written?")
+   #  with open("mcmc_inter_kernel", "wb") as f:
+   #    pickle.dump(kernel_results, f)
     # print(chain[-1, :])
-    print(trace)
+    # print(trace)
     # print(kernel_results)
 
 	# Do your partial analysis here.
 
 
-  print("what's happening")
   full_chain = tf.nest.map_structure(lambda *parts: tf.concat(parts, axis=0), *chain_blocks)
-  print("something is happening")
   full_trace = tf.nest.map_structure(lambda *parts: tf.concat(parts, axis=0), *trace_blocks)
-  print("finally..?")
-  return full_chain, full_trace
+  print("chain completed")
+  return full_chain
   # return full_chain, full_trace
-
 
 remc = tfp.mcmc.ReplicaExchangeMC(
     target_log_prob_fn=unnormalized_posterior,
     inverse_temperatures=inverse_temperatures,
     make_kernel_fn=make_kernel_fn)
 
-samples, trace = run_chain_block(remc, initial_state)
-# samples, kernel_results = run_chain(remc, initial_state)
+print("running chain")
+start_time = time.time()
+samples, results = run_chain(remc, initial_state)
+end_time = time.time()
+print(f"chain complete in {end_time - start_time} sec")
 
+print("saving to file")
+one_string = tf.io.serialize_tensor(samples)
+tf.io.write_file("./saved_mcmc/mcmc_saved_chain", one_string)  
+print(f"saved to file ./saved_mcmc/mcmc_saved_chain")
+	
 
 try:
+    print("plotting corner")
     fig = corner.corner(samples.numpy(),show_titles=True,labels=parameter_labels,plot_datapoints=True,quantiles=[0.16, 0.5, 0.84], truths=true_parameters.numpy()[0])
+    print("corner created")
     fig.savefig(f"{run_identifier}_corner_plot.png", dpi=300, bbox_inches="tight")
+    print(f"corner saved to {run_identifier}_corner_plot.png")
     print("samples.shape", samples.numpy().shape)
     for i in range(NUM_PARAMETERS):
       plt.figure()
       print("plotting samples")	
       # plt.xlim(0, 10)  # Replace `xmax` with the desired maximum x-value0 
       plt.plot(samples[0:-1:100, i], c='b', alpha=.3)
-      print("ployying")	
-      print(true_parameters.shape)
-      print(true_parameters)
+      print("plotting true value")	
+      # print(true_parameters.shape)
+      # print(true_parameters)
       plt.hlines(true_parameters[:, i], 0, 1000, zorder=4, color='g', label="$w_{}$".format(i))
       print("success")
       # Add labels, legend, etc. if needed
       plt.legend()
       plt.xlabel('Sample Index')
-      plt.ylabel('Value')
+      plt.ylabel('Parameter Value')
 
       # Save the plot to a file
       plt.savefig(f'{run_identifier}_trace_plot_{i}.png', dpi=300, bbox_inches='tight')
+      plt.close()
     # print("trace.shape", trace.shape)
     # print(trace)
     # Save the figure
 except Exception as e:
     print("an error occurred when plotting:")
     print(e) 
-    raise e
-
+stop_logger()
