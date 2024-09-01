@@ -18,6 +18,9 @@ from time_logger import start_logger
 tf.enable_v2_behavior()
 
 import tensorflow_probability as tfp
+import inflect
+import os
+num_to_words = inflect.engine().number_to_words
 
 # sns.reset_defaults()
 # sns.set_context(context='talk',font_scale=0.7)
@@ -45,7 +48,7 @@ simple_mode = True
 OUTPUT_DIM = 4 if not simple_mode else 1
 NUM_PARAMETERS = 23 if not simple_mode else 2
 MEASUREMENT_ERROR = tfc([4., 5., 3., 2.]) if not simple_mode else tfc([4.]) # shape = (OUTPUT_DIM,)
-number_of_theta_values = 10000
+number_of_theta_values = 1000
 # print(tfc([0., 1., .2]).shape)
 THETA_VALUES = tf.cast(tf.reshape(tf.linspace(-5., 5., number_of_theta_values), (number_of_theta_values,)), dtype) # shape = (number_of_theta_values,)
 # print(THETA_VALUES.shape)
@@ -55,11 +58,12 @@ eager = False # whether to run the tensors in eager mode or not. only for debugg
 if eager: 
   tf.config.run_functions_eagerly(True) 
   print("EAGER mode turned on")
-true_parameters = tf.cast(tf.linspace(1, 10, NUM_PARAMETERS), dtype)[tf.newaxis, ...] # shape = (1, NUM_PARAMETERS) print("true_parameters = ", true_parameters)
+true_parameters = tf.cast(tf.linspace(1, 10, NUM_PARAMETERS), dtype)[tf.newaxis, ...] # shape = (1, NUM_PARAMETERS) 
+print("true_parameters = ", true_parameters)
 num_samples_string = "1e4"
 num_posterior_samples = int(num_samples_string.split("e")[0]) * (10**int(num_samples_string.split("e")[1]))
 print("num_posterior_samples = ", num_posterior_samples)
-run_identifier = f"{num_samples_string}_withdata"
+run_identifier = f"{num_samples_string}_prior_{NUM_PARAMETERS}param"
 num_temperatures = 10 
 inverse_temperatures = 0.6**tf.range(num_temperatures, dtype=dtype)
 num_burn_in_steps = 5000 
@@ -105,10 +109,10 @@ def lnprior(parameters):
 #  print("parameters.shape", parameters.shape) 
 #  print(parameters)
   # Check if all elements are greater than 0
-  all_greater_than_zero = tf.reduce_all(parameters > -10, axis=1)
+  all_greater_than_zero = tf.reduce_all(parameters >= 1, axis=1)
 
   # Check if all elements are less than 10
-  all_less_than_ten = tf.reduce_all(parameters < 20, axis=1)
+  all_less_than_ten = tf.reduce_all(parameters <= 10, axis=1)
 
   # Check if all conditions are met
   not_valid_parameters = tf.cast(tf.logical_not(tf.logical_and(all_greater_than_zero, all_less_than_ten)), dtype)
@@ -242,13 +246,16 @@ tf.io.write_file("./saved_mcmc/mcmc_saved_chain", one_string)
 print("results were", results)
 print(f"saved to file ./saved_mcmc/mcmc_saved_chain")
 """	
-
 try:
     print("plotting corner")
     fig = corner.corner(samples.numpy(),show_titles=True,labels=parameter_labels,plot_datapoints=True,quantiles=[0.16, 0.5, 0.84], truths=true_parameters.numpy()[0])
     print("corner created")
-    fig.savefig(f"{run_identifier}_corner_plot.png", dpi=300, bbox_inches="tight")
-    print(f"corner saved to {run_identifier}_corner_plot.png")
+    directory = num_to_words(NUM_PARAMETERS)
+    saved_path = os.path.join(directory, f"{run_identifier}_corner_plot.png")
+    if not os.path.isdir(directory):
+      os.mkdir(directory)
+    fig.savefig(saved_path, dpi=300, bbox_inches="tight")
+    print(f"corner saved to {saved_path}")
     print("samples.shape", samples.numpy().shape)
     for i in range(NUM_PARAMETERS):
       plt.figure()
