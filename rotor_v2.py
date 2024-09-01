@@ -57,13 +57,14 @@ if eager:
   print("EAGER mode turned on")
 true_parameters = tf.cast(tf.linspace(1, 10, NUM_PARAMETERS), dtype)[tf.newaxis, ...] # shape = (1, NUM_PARAMETERS) 
 print("true_parameters = ", true_parameters)
-num_samples_string = "2e4"
+num_samples_string = "1e5"
 num_posterior_samples = int(num_samples_string.split("e")[0]) * (10**int(num_samples_string.split("e")[1]))
 print("num_posterior_samples = ", num_posterior_samples)
-run_identifier = f"{num_samples_string}_original"
+run_identifier = f"{num_samples_string}_{NUM_PARAMETERS}param"
 num_temperatures = 10
 inverse_temperatures = 0.6**tf.range(num_temperatures, dtype=dtype)
-num_burn_in_steps = 10000
+num_burn_in_steps = 50000
+assert num_burn_in_steps < num_posterior_samples, "don't burn in more than you sample from the distribution!"
 parameter_labels = [chr(x) for x in range(ord('A'), ord('A') + NUM_PARAMETERS)]
 step_size = tf.reshape(tf.repeat(tf.constant(.5, dtype=dtype), num_temperatures * NUM_PARAMETERS), (num_temperatures, NUM_PARAMETERS))
 initial_state = tf.zeros(NUM_PARAMETERS, dtype=dtype)
@@ -223,7 +224,7 @@ try:
       plt.figure()
       print("plotting samples")	
       # plt.xlim(0, 10)  # Replace `xmax` with the desired maximum x-value0 
-      plt.plot(samples[0:-1:100, i], c='b', alpha=.3)
+      plt.plot(samples[0:-1:10, i], c='b', alpha=.3) # IMPORTANT: plots every 100 samples
       print("plotting true value")	
       # print(true_parameters.shape)
       # print(true_parameters)
