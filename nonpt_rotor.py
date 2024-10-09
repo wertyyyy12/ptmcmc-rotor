@@ -42,7 +42,7 @@ def tfc(arr):
 SEED = 42229
 simple_mode = True
 OUTPUT_DIM = 4 if not simple_mode else 1
-NUM_PARAMETERS = 23 if not simple_mode else 3
+NUM_PARAMETERS = 23 if not simple_mode else 2
 MEASUREMENT_ERROR = tfc([4., 5., 3., 2.]) if not simple_mode else tfc([4.]) # shape = (OUTPUT_DIM,)
 number_of_theta_values = 20000
 # print(tfc([0., 1., .2]).shape)
@@ -54,12 +54,12 @@ eager = False # whether to run the tensors in eager mode or not. only for debugg
 if eager: 
   tf.config.run_functions_eagerly(True) 
   print("WARNING :::: EAGER mode turned on ::: ")
-true_parameters = tf.cast(tf.linspace(1, 10, NUM_PARAMETERS), dtype)[tf.newaxis, ...] # shape = (1, NUM_PARAMETERS) 
+true_parameters = tf.cast(tf.linspace(1, 9, NUM_PARAMETERS), dtype)[tf.newaxis, ...] # shape = (1, NUM_PARAMETERS) 
 print("true_parameters = ", true_parameters)
-num_samples_string = "6e3"
+num_samples_string = "2e3"
 num_posterior_samples = int(num_samples_string.split("e")[0]) * (10**int(num_samples_string.split("e")[1]))
 print("num_posterior_samples = ", num_posterior_samples)
-run_identifier = f"transformedprior_{num_samples_string}_{NUM_PARAMETERS}param"
+run_identifier = f"{num_samples_string}_{NUM_PARAMETERS}param"
 num_temperatures = 10
 inverse_temperatures = 0.6**tf.range(num_temperatures, dtype=dtype)
 num_burn_in_steps = num_posterior_samples // 2
@@ -71,7 +71,7 @@ initial_state = tf.fill(NUM_PARAMETERS, tf.cast(2., dtype))
 target_accept_prob_adaptation = 0.651
 
 use_sigmoid_bijector = False
-bijector = tfb.Sigmoid(low=0., high=11.) if use_sigmoid_bijector else tfb.Identity()
+bijector = tfb.Sigmoid(low=0., high=10.) if use_sigmoid_bijector else tfb.Identity()
 # bijector = tfb.Softplus()
 # initial_state = tf.constant([10000, -10000], dtype=dtype)
 
@@ -164,7 +164,7 @@ def make_kernel_fn(target_log_prob_fn):
  kernel = tfp.mcmc.HamiltonianMonteCarlo(
    target_log_prob_fn=target_log_prob_fn,
    step_size=step_size,
-   num_leapfrog_steps=2)
+   num_leapfrog_steps=3)
  return tfp.mcmc.SimpleStepSizeAdaptation(
        tfp.mcmc.TransformedTransitionKernel(
         inner_kernel=kernel, 
@@ -223,7 +223,6 @@ print("results were", results)
 print(f"saved to file ./saved_mcmc/mcmc_saved_chain")
 """	
 
-plot_thinning_factor = 10
 try:
     print("plotting corner")
     fig = corner.corner(samples.numpy(),show_titles=True,labels=parameter_labels,plot_datapoints=True,quantiles=[0.16, 0.5, 0.84], truths=true_parameters.numpy()[0])
@@ -235,11 +234,11 @@ try:
       plt.figure()
       print("plotting samples")	
       # plt.xlim(0, 10)  # Replace `xmax` with the desired maximum x-value0 
-      plt.plot(samples[0:-1:plot_thinning_factor, i], c='b', alpha=.3) # IMPORTANT: plots every 100 samples
+      plt.plot(samples[0:-1:10, i], c='b', alpha=.3) # IMPORTANT: plots every 100 samples
       print("plotting true value")	
       # print(true_parameters.shape)
       # print(true_parameters)
-      plt.hlines(true_parameters[:, i], 0, samples.shape[0] // plot_thinning_factor, zorder=4, color='g', label="$w_{}$".format(i))
+      plt.hlines(true_parameters[:, i], 0, 1000, zorder=4, color='g', label="$w_{}$".format(i))
       print("success")
       # Add labels, legend, etc. if needed
       plt.legend()
