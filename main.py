@@ -1,9 +1,11 @@
 import tensorflow as tf
+import numpy as np
 import corner
 import matplotlib.pyplot as plt
 from bayesian_models.simple_gaussian import SimpleGaussian
 from mcmc_runners.hmc_runner import HMC
 from config import CONFIG, PLOTTING
+from utils import UTILS
 
 
 gaussian_model = SimpleGaussian()
@@ -88,3 +90,48 @@ except Exception as e:
     raise e
 finally:
     pass
+
+
+inverse = tf.linalg.inv
+matrixmult = tf.linalg.matmul
+inv_prior_cov = inverse(gaussian_model.prior_covariance)
+inv_actual_cov = inverse(gaussian_model.data_covariance)
+sample_mean = np.mean(samples, axis=0, dtype=np.float32)
+UTILS.print_shape("sample mean", sample_mean)
+# UTILS.print_shape("inv prior cov", inv_prior_cov)
+UTILS.print_shape("prior mean", (gaussian_model.prior_mean)[..., tf.newaxis])
+# UTILS.print_shape("inv actual cov", inv_actual_cov
+term_A = inverse(inv_prior_cov + (gaussian_model.num_data_points * inv_actual_cov))
+# print(matrixmult(inv_prior_cov, CONFIG.prior_mean[..., tf.newaxis]))
+# print(matrixmult(inv_actual_cov, sample_mean[..., tf.newaxis
+term_B = matrixmult(inv_prior_cov, (gaussian_model.prior_mean)[..., tf.newaxis]) + (gaussian_model.num_data_points * matrixmult(inv_actual_cov, sample_mean[..., tf.newaxis]))
+
+analytical_posterior_mean = matrixmult(term_A, term_B)
+analytical_posterior_cov = term_A
+print("^^$&@^(*#&$^)")
+
+UTILS.print_shape("sample cov", np.cov(samples, rowvar=False))
+print("analytical posterior cov: ")
+print(analytical_posterior_cov)
+print("data cov: ")
+print(gaussian_model.data_covariance)
+print("sample mean: ")
+print(np.mean(samples, axis=0))
+print("analytical posterior mean: ")
+print(analytical_posterior_mean)
+
+analytical_posterior_dist = UTILS.cov_mvn(analytical_posterior_mean[:, 0], analytical_posterior_cov)
+UTILS.print_shape("mean", analytical_posterior_mean)
+UTILS.print_shape("cov", analytical_posterior_cov)
+# samples = analytical_posterior_dist.sample(CONFIG.num_posterior_samples)
+analytical_posterior_samples = analytical_posterior_dist.sample(hmc_runner.num_posterior_samples)
+# analytical_posterior_samples = analytical_posterior_dist.sample(1000)
+print(samples.shape)
+print(analytical_posterior_samples[:, 0, :].shape)
+UTILS.print_shape("analytical posterior samples", analytical_posterior_samples)
+
+fig = corner.corner(analytical_posterior_samples[:, 0, :].numpy(),show_titles=True,labels=PLOTTING.parameter_labels,plot_datapoints=True,quantiles=[0.16, 0.5, 0.84], truths=true_parameters.numpy(), color="green")
+
+# corner.corner(samples.numpy(),fig=fig, color="red")
+plt.savefig(f"{PLOTTING.run_identifier}_corner_plot_analytical.png", dpi=300, bbox_inches="tight")
+plt.close()
