@@ -3,7 +3,8 @@ import numpy as np
 import corner
 import matplotlib.pyplot as plt
 from bayesian_models.simple_gaussian import SimpleGaussian
-from mcmc_runners.nuts_runner import NUTS
+from mcmc_runners.PTMCMC_runner import PTMCMC
+from mcmc_runners.hmc_runner import HMC
 from config import CONFIG, PLOTTING
 from utils import UTILS
 
@@ -12,7 +13,8 @@ gaussian_model = SimpleGaussian()
 num_params = 5
 num_posterior_samples = 100
 num_burn_in_steps = num_posterior_samples // 2
-nuts_runner = NUTS(
+
+hmc_runner = HMC(
     num_posterior_samples=num_posterior_samples,
     num_burn_in_steps=num_burn_in_steps,  #  initial_state=tf.fill([num_params], tf.cast(1000., dtype)),\
     initial_state=tf.fill([num_params], tf.cast(1000.0, CONFIG.dtype)),
@@ -25,8 +27,21 @@ nuts_runner = NUTS(
     num_leapfrog_steps=2,
     eager_mode=False,
 )
-samples = nuts_runner.run_chain(gaussian_model)
 
+ptmcmc_runner = PTMCMC(
+    num_posterior_samples=num_posterior_samples,
+    num_burn_in_steps=num_burn_in_steps,
+    initial_state=tf.fill([num_params], tf.cast(1000.0, CONFIG.dtype)),
+    seed=42,
+    assumed_measurement_error=tf.constant([]),
+    actual_measurement_error=tf.constant([]),
+    num_parameters=num_params,
+    target_accept_prob_adapt=0.651,
+    inverse_temperatures=tf.constant([1.0, 0.5, 0.25, 0.125]),
+    make_sub_kernel_fn=hmc_runner.make_kernel_fn,
+)
+
+samples = ptmcmc_runner.run_chain(gaussian_model)
 
 parameter_labels = [
     chr(x) for x in range(ord("A"), ord("A") + gaussian_model.num_parameters)
@@ -124,7 +139,7 @@ analytical_posterior_dist = UTILS.cov_mvn(analytical_posterior_mean[:, 0], analy
 UTILS.print_shape("mean", analytical_posterior_mean)
 UTILS.print_shape("cov", analytical_posterior_cov)
 # samples = analytical_posterior_dist.sample(CONFIG.num_posterior_samples)
-analytical_posterior_samples = analytical_posterior_dist.sample(nuts_runner.num_posterior_samples)
+analytical_posterior_samples = analytical_posterior_dist.sample(hmc_runner.num_posterior_samples)
 # analytical_posterior_samples = analytical_posterior_dist.sample(1000)
 print(samples.shape)
 print(analytical_posterior_samples[:, 0, :].shape)

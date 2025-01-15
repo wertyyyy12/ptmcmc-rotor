@@ -4,7 +4,7 @@ import tensorflow_probability as tfp
 from mcmc_runners.mcmc_runner import MCMC_Runner
 
 
-class HMC(MCMC_Runner):
+class NUTS(MCMC_Runner):
     def __init__(
         self,
         num_posterior_samples,
@@ -42,10 +42,8 @@ class HMC(MCMC_Runner):
         # print(self.num_leapfrog_steps)
         # print(self.target_accept_prob_adapt)
         # print("end debug: ")
-        kernel = tfp.mcmc.HamiltonianMonteCarlo(
-            target_log_prob_fn=target_log_prob_fn,
-            step_size=self.step_size,
-            num_leapfrog_steps=self.num_leapfrog_steps,
+        kernel = tfp.mcmc.NoUTurnSampler(
+            target_log_prob_fn=target_log_prob_fn, step_size=self.step_size
         )
         return tfp.mcmc.SimpleStepSizeAdaptation(
             inner_kernel=kernel,

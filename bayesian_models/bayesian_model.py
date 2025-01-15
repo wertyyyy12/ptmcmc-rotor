@@ -11,8 +11,8 @@ class BayesianModel:
     def lnprior(self, parameters):
         pass
 
-    def _unnormalized_posterior(self, parameters, data_input, data_output):
+    def _unnormalized_posterior(self, parameters, data_input, data_output, is_ptmcmc):
         pass
 
-    def unnormalized_posterior(self, parameters):
+    def unnormalized_posterior(self, parameters, is_ptmcmc):
         pass

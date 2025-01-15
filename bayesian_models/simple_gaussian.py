@@ -28,20 +28,9 @@ class SimpleGaussian(BayesianModel):
         self.fake_data = self.generate_data(self.num_data_points)
 
     def generate_data(self, num_data_points):
-        # print(" == generate_data DEBUG == ")
-        # print("cov:")
-        # print(self.covariance)
-        # print("==")
-        # print("num_data_points")
-        # print(num_data_points)
         generated_data = UTILS.cov_mvn(self.data_mean, self.data_covariance).sample(
             (num_data_points), seed=tfp.random.sanitize_seed(123)
         )
-        # print("self.prior_mean")
-        # print(self.prior_mean)
-        # print("generated_Data")
-        # print(generated_data)
-        # print(" == end generate_data DEBUG ==")
         return generated_data
 
     def model(self, data_input, parameters):
@@ -51,19 +40,6 @@ class SimpleGaussian(BayesianModel):
         likelihoods_dist = UTILS.cov_mvn(
             self.model(data_input, parameters), self.data_covariance
         )
-        # print("likelihood debug:")
-        # print("cov:")
-        # print(self.covariance)
-        # print("==")
-        # print("model:")
-        # print(self.model(data_input, parameters))
-        # print("==")
-        # print("output:")
-        # print(data_output)
-        # print("==")
-        # print("input:")
-        # print(data_input)
-        # print("END LIKELIHOOD DEBUG")
         return tf.reduce_sum(likelihoods_dist.log_prob(data_output), axis=0)
 
     def lnprior(self, parameters):
@@ -71,19 +47,12 @@ class SimpleGaussian(BayesianModel):
             parameters
         )
 
-    def _unnormalized_posterior(self, parameters, data_input, data_output):
+    def _unnormalized_posterior(self, parameters, data_input, data_output, is_ptmcmc):
         likelihoods = self.lnlikelihood(data_input, data_output, parameters)
-        # print("debug: ")
-        # print(likelihoods)
-        # print("==")
-        # print(data_input)
-        # print("==")
-        # print(data_output)
-        # print("==")
-        # print(parameters)
-        return (self.lnprior(parameters) + likelihoods)[0]
+        if not is_ptmcmc:
+            return (self.lnprior(parameters) + likelihoods)[0]
+        else:
+            return self.lnprior(parameters) + likelihoods
 
-    def unnormalized_posterior(self, parameters):
-        # fake_data = self.generate_data(self.num_data_points)
-        # pdb.set_trace()
-        return self._unnormalized_posterior(parameters, self.fake_data, self.fake_data)
+    def unnormalized_posterior(self, parameters, is_ptmcmc):
+        return self._unnormalized_posterior(parameters, self.fake_data, self.fake_data, is_ptmcmc)
